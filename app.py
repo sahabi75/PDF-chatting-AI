@@ -17,9 +17,17 @@ with st.sidebar:
     if st.button("Process") and pdfs:
         with st.spinner("Processing..."):
             text = get_pdf_text(pdfs)
+
+            st.write("TEXT LENGTH:", len(text))
+
             chunks = get_text_chunks(text)
+
+            st.write("CHUNKS:", len(chunks))
+
             vs = get_vectorstore(chunks)
+
             st.session_state.chain = get_conversation_chain(vs)
+
             st.success("Ready to chat!")
 
 question = st.chat_input("Ask something about your PDF...")

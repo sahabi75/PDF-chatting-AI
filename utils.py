@@ -17,8 +17,11 @@ def get_pdf_text(pdf_docs):
 
         for page in reader.pages:
             page_text = page.extract_text()
+
             if page_text:
                 text += page_text
+
+    print("TEXT SIZE =", len(text))
 
     return text
 
@@ -47,9 +50,9 @@ def get_vectorstore(chunks):
 
 def get_conversation_chain(vectorstore):
     llm = ChatGroq(
-        model_name="llama3-8b-8192",
-        temperature=0
-    )
+    model_name="llama-3.1-8b-instant",
+    temperature=0
+)
 
     memory = ConversationBufferMemory(
         memory_key="chat_history",

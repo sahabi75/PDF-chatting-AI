@@ -1,68 +1,55 @@
 from PyPDF2 import PdfReader
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
+from pdf2image import convert_from_path
 
-from langchain_groq import ChatGroq
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
+import os
+
+from ocr import extract_text_from_image
+
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 
-def get_pdf_text(pdf_docs):
+def get_pdf_text(pdf_path):
+
     text = ""
 
-    for pdf in pdf_docs:
-        reader = PdfReader(pdf)
+    reader = PdfReader(pdf_path)
 
-        for page in reader.pages:
-            page_text = page.extract_text()
+    for page in reader.pages:
 
-            if page_text:
-                text += page_text
+        page_text = page.extract_text()
 
-    print("TEXT SIZE =", len(text))
+        if page_text:
+
+            text += page_text
+
+    if text.strip():
+
+        return text
+
+    images = convert_from_path(pdf_path)
+
+    for i, image in enumerate(images):
+
+        image_path = f"temp/page_{i}.png"
+
+        image.save(image_path)
+
+        text += extract_text_from_image(image_path)
+
+        os.remove(image_path)
 
     return text
 
 
 def get_text_chunks(text):
+
     splitter = RecursiveCharacterTextSplitter(
+
         chunk_size=1000,
+
         chunk_overlap=200
+
     )
 
     return splitter.split_text(text)
-
-
-def get_vectorstore(chunks):
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-
-    vectorstore = FAISS.from_texts(
-        texts=chunks,
-        embedding=embeddings
-    )
-
-    return vectorstore
-
-
-def get_conversation_chain(vectorstore):
-    llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0
-)
-
-    memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        return_messages=True
-    )
-
-    chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=vectorstore.as_retriever(),
-        memory=memory
-    )
-
-    return chain

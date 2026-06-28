@@ -1,41 +1,82 @@
 import streamlit as st
-from dotenv import load_dotenv
-from utils import get_pdf_text, get_text_chunks, get_vectorstore, get_conversation_chain
+import pytesseract
+from PIL import Image
+from pdf2image import convert_from_bytes
+from langdetect import detect
 
-load_dotenv()
-st.set_page_config(page_title="PDF Chat AI", page_icon="📚")
-st.title("📚 Chat with your PDF")
+import faiss
+import numpy as np
 
-if "chain" not in st.session_state:
-    st.session_state.chain = None
-if "history" not in st.session_state:
-    st.session_state.history = []
+POPPLER_PATH = r"C:\Release-26.02.0-0\poppler-26.02.0\Library\bin"
 
-with st.sidebar:
-    st.subheader("Upload PDFs")
-    pdfs = st.file_uploader("Choose PDFs", type="pdf", accept_multiple_files=True)
-    if st.button("Process") and pdfs:
-        with st.spinner("Processing..."):
-            text = get_pdf_text(pdfs)
+st.set_page_config(page_title="Chat PDF AI", layout="wide")
 
-            st.write("TEXT LENGTH:", len(text))
+st.title("💬 Chat with PDF AI")
 
-            chunks = get_text_chunks(text)
+# ---------------- OCR ----------------
+def extract_text(image):
+    return pytesseract.image_to_string(image)
 
-            st.write("CHUNKS:", len(chunks))
+# ---------------- SIMPLE CHUNKING ----------------
+def chunk_text(text, chunk_size=500):
+    return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-            vs = get_vectorstore(chunks)
+# ---------------- EMBEDDING (simple hash-based fallback if no API) ----------------
+def embed(text):
+    # simple deterministic embedding (NO API needed)
+    np.random.seed(abs(hash(text)) % (2**32))
+    return np.random.rand(384).astype("float32")
 
-            st.session_state.chain = get_conversation_chain(vs)
+# ---------------- BUILD INDEX ----------------
+def build_index(chunks):
+    vectors = np.array([embed(c) for c in chunks])
+    index = faiss.IndexFlatL2(384)
+    index.add(vectors)
+    return index, vectors
 
-            st.success("Ready to chat!")
+# ---------------- SEARCH ----------------
+def search(query, chunks, index, vectors, k=3):
+    q_vec = embed(query).reshape(1, -1)
+    _, I = index.search(q_vec, k)
+    return [chunks[i] for i in I[0]]
 
-question = st.chat_input("Ask something about your PDF...")
-if question and st.session_state.chain:
-    response = st.session_state.chain({"question": question})
-    st.session_state.history.append(("You", question))
-    st.session_state.history.append(("AI", response["answer"]))
+# ---------------- UPLOAD ----------------
+file = st.file_uploader("Upload PDF", type=["pdf"])
 
-for role, msg in st.session_state.history:
-    with st.chat_message("user" if role == "You" else "assistant"):
-        st.write(msg)
+chunks = []
+index = None
+vectors = None
+
+if file is not None:
+
+    text = ""
+
+    images = convert_from_bytes(file.read(), poppler_path=POPPLER_PATH)
+
+    for img in images:
+        st.image(img)
+        text += extract_text(img) + "\n"
+
+    chunks = chunk_text(text)
+
+    index, vectors = build_index(chunks)
+
+    st.success("PDF processed successfully!")
+
+# ---------------- CHAT ----------------
+if chunks:
+
+    st.subheader("💬 Ask Questions")
+
+    question = st.text_input("Ask something from PDF")
+
+    if question:
+
+        results = search(question, chunks, index, vectors)
+
+        st.write("### 📌 Relevant Context")
+        for r in results:
+            st.write(r)
+
+        st.success("AI Answer (basic version):")
+        st.write(" ".join(results))

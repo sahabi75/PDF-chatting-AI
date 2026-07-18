@@ -8,6 +8,8 @@ from langchain_groq import ChatGroq
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 
+from langchain.prompts import PromptTemplate
+
 
 def get_pdf_text(pdf_docs):
     text = ""
@@ -19,7 +21,7 @@ def get_pdf_text(pdf_docs):
             page_text = page.extract_text()
 
             if page_text:
-                text += page_text
+                text += page_text + "\n"
 
     print("TEXT SIZE =", len(text))
 
@@ -32,7 +34,11 @@ def get_text_chunks(text):
         chunk_overlap=200
     )
 
-    return splitter.split_text(text)
+    chunks = splitter.split_text(text)
+
+    print("TOTAL CHUNKS =", len(chunks))
+
+    return chunks
 
 
 def get_vectorstore(chunks):
@@ -49,20 +55,51 @@ def get_vectorstore(chunks):
 
 
 def get_conversation_chain(vectorstore):
+
     llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0
-)
+        model="llama-3.1-8b-instant",
+        temperature=0
+    )
 
     memory = ConversationBufferMemory(
         memory_key="chat_history",
         return_messages=True
     )
 
+    prompt_template = """
+You are a helpful AI assistant that answers questions about the uploaded PDF.
+
+Use the following pieces of context from the PDF to answer the user's question.
+
+Context:
+{context}
+
+Question:
+{question}
+
+Instructions:
+- Answer based on the PDF context whenever possible.
+- If the answer is not available in the PDF, clearly say that the information is not available in the uploaded PDF.
+- Do not make up information.
+- Be clear and concise.
+
+Answer:
+"""
+
+    prompt = PromptTemplate(
+        template=prompt_template,
+        input_variables=["context", "question"]
+    )
+
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
-        retriever=vectorstore.as_retriever(),
-        memory=memory
+        retriever=vectorstore.as_retriever(
+            search_kwargs={"k": 4}
+        ),
+        memory=memory,
+        combine_docs_chain_kwargs={
+            "prompt": prompt
+        }
     )
 
     return chain

@@ -57,7 +57,7 @@ def get_vectorstore(chunks):
 def get_conversation_chain(vectorstore):
 
     llm = ChatGroq(
-        model="llama-3.1-8b-instant",
+        model="openai/gpt-oss-20b",
         temperature=0
     )
 
